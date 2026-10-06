@@ -4,7 +4,7 @@ import AppKit
 final class EditorPane: NSView {
     let textView: NSTextView
     var highlightColor: NSColor = .clear
-    private let scrollView: NSScrollView
+    let scrollView: NSScrollView
 
     init(title: String) {
         scrollView = NSTextView.scrollableTextView()
@@ -23,6 +23,7 @@ final class EditorPane: NSView {
         textView.isContinuousSpellCheckingEnabled = false
         textView.textContainerInset = NSSize(width: 6, height: 8)
         scrollView.borderType = .noBorder
+        scrollView.contentView.postsBoundsChangedNotifications = true
 
         let label = Self.titleLabel(title)
         for v in [label, scrollView] {
@@ -64,6 +65,45 @@ final class EditorPane: NSView {
         for r in ranges where r.length > 0 && NSMaxRange(r) <= length {
             lm.addTemporaryAttribute(.backgroundColor, value: highlightColor, forCharacterRange: r)
         }
+    }
+
+    // MARK: - Scroll position as text location
+
+    /// The character at the top of the visible area, and how far (in points) the view is
+    /// scrolled past the top of that character's line.
+    func topLocation() -> (index: Int, lineOffset: CGFloat)? {
+        guard let lm = textView.layoutManager, let tc = textView.textContainer, textView.string.utf16.count > 0 else { return nil }
+        let y = scrollView.contentView.bounds.minY - textView.textContainerOrigin.y
+        let glyph = lm.glyphIndex(for: NSPoint(x: 0, y: max(0, y)), in: tc)
+        let line = lm.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return (lm.characterIndexForGlyph(at: glyph), y - line.minY)
+    }
+
+    func scroll(toLocation index: Int, lineOffset: CGFloat) {
+        guard let lm = textView.layoutManager else { return }
+        let length = textView.string.utf16.count
+        var y: CGFloat = 0
+        if length > 0 {
+            let glyph = lm.glyphIndexForCharacter(at: min(index, length - 1))
+            lm.ensureLayout(forGlyphRange: NSRange(location: 0, length: glyph + 1))
+            let line = lm.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            y = line.minY + textView.textContainerOrigin.y + min(max(lineOffset, 0), line.height)
+        }
+        scrollTo(y: y)
+    }
+
+    var isScrolledToBottom: Bool {
+        let clip = scrollView.contentView
+        return clip.bounds.maxY >= textView.frame.height - 1 && clip.bounds.minY > 0
+    }
+
+    func scrollToBottom() { scrollTo(y: .greatestFiniteMagnitude) }
+
+    private func scrollTo(y: CGFloat) {
+        let clip = scrollView.contentView
+        let maxY = max(0, textView.frame.height - clip.bounds.height)
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: min(max(0, y), maxY)))
+        scrollView.reflectScrolledClipView(clip)
     }
 
     func reveal(_ range: NSRange) {

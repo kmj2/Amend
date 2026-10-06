@@ -1,50 +1,52 @@
 # Amend
 
-AI와 글을 교정할 때 원문과 수정본의 차이를 한눈에 보고, 변경점마다 **수락/거절**할 수 있는 가벼운 macOS 앱.
+A lightweight macOS app for proofreading with AI: paste your original and the revised text, see what changed, and **accept or reject** each change.
 
-- 원본/수정본 붙여넣기 → 차이 실시간 표시 (삭제 빨강, 삽입 초록)
-- 하단 비교 창에서 변경 클릭 → 수락 / 거절
-- 양쪽 칸 모두 직접 타이핑 수정 가능, 실행 취소(⌘Z) 지원
-- 모든 변경을 처리하면 **수정본 (결과)** 칸이 최종본 → `결과 복사`
-- 외부 의존성 없음, 앱 크기 약 400KB
+- Live diff as you type (deletions in red, insertions in green)
+- Click a change in the comparison pane to accept or reject it
+- Both panes are editable; full undo/redo
+- Scrolling stays in sync between the two panes
+- Once every change is resolved, the **Revised** pane holds the final text — hit `Copy Result`
+- No dependencies, under 1 MB
 
-## 단축키
+## Shortcuts
 
-| 동작 | 키 |
+| Action | Key |
 |---|---|
-| 수락 / 거절 | ⌘↩ / ⇧⌘↩ |
-| 다음 / 이전 변경 | ⌘] / ⌘[ |
-| 결과 복사 | ⇧⌘C |
-| 비교 창 보이기/숨기기 | ⌥⌘I |
-| 글자 크기 | ⌘+ / ⌘- / ⌘0 |
+| Accept / Reject | ⌘↩ / ⇧⌘↩ |
+| Next / Previous change | ⌘] / ⌘[ |
+| Undo / Redo | ⌘Z / ⇧⌘Z |
+| Copy result | ⇧⌘C |
+| Show/hide comparison | ⌥⌘I |
+| Font size | ⌘+ / ⌘- / ⌘0 |
 
-## 설치
+## Install
 
-[Releases](../../releases)에서 `Amend-x.y.z.zip`을 받아 압축을 풀고 `Amend.app`을 응용 프로그램 폴더로 옮깁니다.
+Download `Amend-x.y.z.zip` from [Releases](../../releases), unzip, and move `Amend.app` to Applications.
 
-공증(notarization)되지 않은 앱이라 처음 실행 시 macOS가 막을 수 있습니다. 앱을 **우클릭 → 열기**하거나, 다음을 실행하세요.
+The app is not notarized, so macOS may block the first launch. Right-click the app → **Open**, or run:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Amend.app
 ```
 
-macOS 13 이상, Apple Silicon / Intel 모두 지원.
+Requires macOS 13 or later (Apple Silicon and Intel).
 
-## 빌드
+## Build
 
 ```sh
-swift test                  # diff 엔진 테스트
-swift run                   # 개발 실행
+swift test                  # diff engine tests
+swift run                   # run in development
 scripts/build-app.sh 0.1.0  # build/Amend.app + zip
 ```
 
-`v*` 태그를 푸시하면 GitHub Actions가 릴리즈를 만듭니다.
+Pushing a `v*` tag builds a GitHub release.
 
-## 동작 방식
+## How it works
 
-단어/공백/문장부호 단위로 나눈 뒤 Myers diff(Swift `CollectionDifference`)로 비교하고, diff-match-patch의 semantic cleanup처럼 짧은 공통 구간을 사이에 둔 변경은 하나로 묶습니다. 단어 안에서 공통 앞뒤 글자(2자 이상)는 따로 표시해 `사과를 → 사과가`처럼 바뀐 글자만 강조합니다.
+Text is split into words, whitespace and punctuation, then compared with a Myers diff (Swift's `CollectionDifference`). As in diff-match-patch's semantic cleanup, edits separated by a short unchanged span are merged into one change. Within a word, a shared prefix/suffix of two or more characters is left unhighlighted, so only the characters that changed stand out.
 
-[compareDoc](https://wepplication.github.io/tools/compareDoc/), [jQuery.PrettyTextDiff](https://github.com/arnab/jQuery.PrettyTextDiff), [jQuery.picadiff](https://github.com/picapica-org/jQuery.picadiff)를 참고했습니다.
+Inspired by [compareDoc](https://wepplication.github.io/tools/compareDoc/), [jQuery.PrettyTextDiff](https://github.com/arnab/jQuery.PrettyTextDiff) and [jQuery.picadiff](https://github.com/picapica-org/jQuery.picadiff).
 
 ## License
 

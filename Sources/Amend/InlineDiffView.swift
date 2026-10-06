@@ -2,11 +2,11 @@ import AppKit
 import DiffCore
 
 /// Read-only unified view in the style of PrettyTextDiff: deletions struck through in red,
-/// insertions in green. Clicking a change selects it and shows accept/decline buttons.
+/// insertions in green. Clicking a change selects it and shows accept/reject buttons.
 final class InlineDiffView: NSTextView {
     var onSelect: ((Int?) -> Void)?
     var onAccept: ((Int) -> Void)?
-    var onDecline: ((Int) -> Void)?
+    var onReject: ((Int) -> Void)?
 
     private(set) var hunkRanges: [Int: NSRange] = [:]
     private let actionBar = HunkActionBar()
@@ -31,8 +31,8 @@ final class InlineDiffView: NSTextView {
         actionBar.onAccept = { [weak self] in
             if let id = self?.selectedHunk { self?.onAccept?(id) }
         }
-        actionBar.onDecline = { [weak self] in
-            if let id = self?.selectedHunk { self?.onDecline?(id) }
+        actionBar.onReject = { [weak self] in
+            if let id = self?.selectedHunk { self?.onReject?(id) }
         }
         addSubview(actionBar)
     }
@@ -74,7 +74,7 @@ final class InlineDiffView: NSTextView {
             }
         }
         if out.length == 0 {
-            out.append(NSAttributedString(string: "위 두 칸에 원본과 수정본을 붙여넣으면 차이가 여기에 표시됩니다.",
+            out.append(NSAttributedString(string: "Paste the original and revised text above to see the differences here.",
                                           attributes: base.merging([.foregroundColor: NSColor.placeholderTextColor]) { $1 }))
         }
         hunkRanges = ranges
@@ -180,10 +180,10 @@ final class InlineDiffView: NSTextView {
     }
 }
 
-/// Small floating "✓ 수락  ✕ 거절" pill shown under the selected change.
+/// Small floating "✓ Accept  ✕ Reject" pill shown under the selected change.
 final class HunkActionBar: NSView {
     var onAccept: (() -> Void)?
-    var onDecline: (() -> Void)?
+    var onReject: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -195,9 +195,9 @@ final class HunkActionBar: NSView {
         layer?.shadowRadius = 3
         layer?.shadowOffset = CGSize(width: 0, height: -1)
 
-        let accept = button("수락", symbol: "checkmark", color: .systemGreen, action: #selector(acceptTapped))
-        let decline = button("거절", symbol: "xmark", color: .systemRed, action: #selector(declineTapped))
-        let stack = NSStackView(views: [accept, decline])
+        let accept = button("Accept", symbol: "checkmark", color: .systemGreen, action: #selector(acceptTapped))
+        let reject = button("Reject", symbol: "xmark", color: .systemRed, action: #selector(rejectTapped))
+        let stack = NSStackView(views: [accept, reject])
         stack.spacing = 2
         stack.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 2, right: 4)
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -230,5 +230,5 @@ final class HunkActionBar: NSView {
     }
 
     @objc private func acceptTapped() { onAccept?() }
-    @objc private func declineTapped() { onDecline?() }
+    @objc private func rejectTapped() { onReject?() }
 }

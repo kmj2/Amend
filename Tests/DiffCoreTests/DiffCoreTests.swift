@@ -46,6 +46,7 @@ final class DifferTests: XCTestCase {
         let h = Differ.diff("It were fine", "It was fine").hunks
         XCTAssertEqual(h.map(\.sharedPrefix), [0])
         XCTAssertEqual(Differ.diff("jump", "jumps").hunks.map(\.sharedPrefix), [4])
+        XCTAssertEqual(Differ.diff("I has a pen", "I have an pen").hunks.map(\.sharedPrefix), [0])
     }
 
     func testCleanupMergesAcrossShortEquality() {
@@ -82,15 +83,15 @@ final class DifferTests: XCTestCase {
         XCTAssertEqual(rb, b)
     }
 
-    func testAcceptAndDeclineConverge() {
+    func testAcceptAndRejectConverge() {
         let a = "Hello wrld, this are test.\nKeep me."
         let b = "Hello world, this is a test.\nKeep me!"
         var x = a, y = b
-        // Accept the first, decline the rest — always re-diff after each action.
+        // Accept the first, reject the rest — always re-diff after each action.
         var first = true
         while let h = Differ.diff(x, y).hunks.first {
             if first { x = Differ.accept(h, in: x); first = false }
-            else { y = Differ.decline(h, in: y) }
+            else { y = Differ.reject(h, in: y) }
         }
         XCTAssertEqual(x, y)
         XCTAssertTrue(x.hasPrefix("Hello world"))
@@ -102,6 +103,16 @@ final class DifferTests: XCTestCase {
         var x = a
         while let h = Differ.diff(x, b).hunks.first { x = Differ.accept(h, in: x) }
         XCTAssertEqual(x, b)
+    }
+
+    func testMapOffset() {
+        let a = "aaa bb cc\nkeep"
+        let b = "aaa XXXXX cc\nkeep"
+        let r = Differ.diff(a, b)
+        XCTAssertEqual(r.mapOffset(0, fromOriginal: true), 0)
+        XCTAssertEqual(r.mapOffset(5, fromOriginal: true), 4)   // inside "bb" -> start of "XXXXX"
+        XCTAssertEqual(r.mapOffset(10, fromOriginal: true), 13) // "keep"
+        XCTAssertEqual(r.mapOffset(13, fromOriginal: false), 10)
     }
 
     func testLargeInputPerformance() {

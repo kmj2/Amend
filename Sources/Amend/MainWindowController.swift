@@ -2,19 +2,22 @@ import AppKit
 import DiffCore
 
 /// The whole app is one window holding two strings: the original and the modified text.
-/// Accepting a change copies the modified wording into the original; declining copies the
+/// Accepting a change copies the modified wording into the original; rejecting copies the
 /// original wording back into the modified text. Either way the change disappears, and once
 /// nothing is left the modified pane holds the final result.
 final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenuItemValidation, NSSplitViewDelegate {
-    private let originalPane = EditorPane(title: "원본")
-    private let modifiedPane = EditorPane(title: "수정본 (결과)")
+    private let originalPane = EditorPane(title: "Original")
+    private let modifiedPane = EditorPane(title: "Revised (Result)")
     private let inlineView = InlineDiffView()
     private let inlineScroll = NSScrollView()
     private let editorsSplit = NSSplitView()
     private let outerSplit = NSSplitView()
     private let statusLabel = NSTextField(labelWithString: "")
     private var acceptButton: NSButton!
-    private var declineButton: NSButton!
+    private var rejectButton: NSButton!
+    private var undoButton: NSButton!
+    private var redoButton: NSButton!
+    private var isSyncingScroll = false
 
     private var result = DiffResult.empty
     private var selected: Int?
@@ -30,6 +33,11 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
             UserDefaults.standard.set(Double(fontSize), forKey: Self.fontSizeKey)
             applyFont()
         }
+    }
+
+    private static let syncScrollKey = "syncScrolling"
+    private var syncScrolling: Bool = UserDefaults.standard.object(forKey: MainWindowController.syncScrollKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(syncScrolling, forKey: Self.syncScrollKey) }
     }
 
     private var original: NSTextView { originalPane.textView }
@@ -56,6 +64,8 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         if let s = ProcessInfo.processInfo.environment["AMEND_SELECT"], let id = Int(s) {
             DispatchQueue.main.async { self.recompute(); self.select(id) }
         }
+        if ProcessInfo.processInfo.environment["AMEND_SELFTEST"] != nil { selfTest() }
+        if ProcessInfo.processInfo.environment["AMEND_SCROLLTEST"] != nil { scrollTest() }
         #endif
         recompute()
     }
@@ -69,6 +79,11 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
 
         for pane in [originalPane, modifiedPane] {
             pane.textView.delegate = self
+            NotificationCenter.default.addObserver(self, selector: #selector(editorDidScroll(_:)),
+                                                   name: NSView.boundsDidChangeNotification, object: pane.scrollView.contentView)
+        }
+        for name in [Notification.Name.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(updateUndoButtons), name: name, object: nil)
         }
         originalPane.highlightColor = Theme.deletion
         modifiedPane.highlightColor = Theme.insertion
@@ -85,10 +100,10 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         inlineView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         inlineView.onSelect = { [weak self] id in self?.select(id, scrollInline: false) }
         inlineView.onAccept = { [weak self] id in self?.accept(id) }
-        inlineView.onDecline = { [weak self] id in self?.decline(id) }
+        inlineView.onReject = { [weak self] id in self?.reject(id) }
 
         let inlinePane = NSView()
-        let inlineTitle = EditorPane.titleLabel("비교")
+        let inlineTitle = EditorPane.titleLabel("Comparison")
         inlinePane.addSubview(inlineTitle)
         inlinePane.addSubview(inlineScroll)
         inlineScroll.translatesAutoresizingMaskIntoConstraints = false
@@ -147,23 +162,25 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
             b.toolTip = tip
             return b
         }
-        let prev = button("", "chevron.up", #selector(selectPrevious(_:)), tip: "이전 변경 (⌘[)")
-        let next = button("", "chevron.down", #selector(selectNext(_:)), tip: "다음 변경 (⌘])")
-        acceptButton = button("수락", "checkmark", #selector(acceptSelected(_:)), tip: "선택한 변경 수락 (⌘↩)")
+        undoButton = button("", "arrow.uturn.backward", #selector(performUndo(_:)), tip: "Undo (⌘Z)")
+        redoButton = button("", "arrow.uturn.forward", #selector(performRedo(_:)), tip: "Redo (⇧⌘Z)")
+        let prev = button("", "chevron.up", #selector(selectPrevious(_:)), tip: "Previous Change (⌘[)")
+        let next = button("", "chevron.down", #selector(selectNext(_:)), tip: "Next Change (⌘])")
+        acceptButton = button("Accept", "checkmark", #selector(acceptSelected(_:)), tip: "Accept Selected Change (⌘↩)")
         acceptButton.contentTintColor = .systemGreen
-        declineButton = button("거절", "xmark", #selector(declineSelected(_:)), tip: "선택한 변경 거절 (⇧⌘↩)")
-        declineButton.contentTintColor = .systemRed
-        let acceptAll = button("모두 수락", nil, #selector(acceptAll(_:)), tip: "모든 변경 수락")
-        let declineAll = button("모두 거절", nil, #selector(declineAll(_:)), tip: "모든 변경 거절")
-        let copy = button("결과 복사", "doc.on.doc", #selector(copyResult(_:)), tip: "수정본 전체 복사 (⇧⌘C)")
-        let clear = button("", "trash", #selector(clearAll(_:)), tip: "모두 지우기")
+        rejectButton = button("Reject", "xmark", #selector(rejectSelected(_:)), tip: "Reject Selected Change (⇧⌘↩)")
+        rejectButton.contentTintColor = .systemRed
+        let acceptAll = button("Accept All", nil, #selector(acceptAll(_:)), tip: "Accept All Changes")
+        let rejectAll = button("Reject All", nil, #selector(rejectAll(_:)), tip: "Reject All Changes")
+        let copy = button("Copy Result", "doc.on.doc", #selector(copyResult(_:)), tip: "Copy the Revised Text (⇧⌘C)")
+        let clear = button("", "trash", #selector(clearAll(_:)), tip: "Clear All")
 
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.font = .systemFont(ofSize: 12)
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let stack = NSStackView(views: [prev, next, acceptButton, declineButton, gap(), acceptAll, declineAll,
+        let stack = NSStackView(views: [undoButton, redoButton, gap(), prev, next, acceptButton, rejectButton, gap(), acceptAll, rejectAll,
                                          spacer, statusLabel, gap(), copy, clear])
         stack.orientation = .horizontal
         stack.spacing = 6
@@ -216,14 +233,15 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         if original.string.isEmpty && modified.string.isEmpty {
             statusLabel.stringValue = ""
         } else if count == 0 {
-            statusLabel.stringValue = "차이 없음"
+            statusLabel.stringValue = "No differences"
         } else if let s = selected {
-            statusLabel.stringValue = "변경 \(s + 1) / \(count)"
+            statusLabel.stringValue = Self.status(selected: s, count: count)
         } else {
-            statusLabel.stringValue = "변경 \(count)개"
+            statusLabel.stringValue = Self.status(selected: nil, count: count)
         }
         acceptButton.isEnabled = count > 0
-        declineButton.isEnabled = count > 0
+        rejectButton.isEnabled = count > 0
+        updateUndoButtons()
     }
 
     /// Highlight only the characters that differ, not the shared prefix/suffix.
@@ -251,10 +269,15 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         }
     }
 
+    private static func status(selected: Int?, count: Int) -> String {
+        if let s = selected { return "Change \(s + 1) of \(count)" }
+        return count == 1 ? "1 change" : "\(count) changes"
+    }
+
     private func recomputeStatusOnly() {
         let count = result.hunks.count
         guard count > 0 else { return }
-        statusLabel.stringValue = selected.map { "변경 \($0 + 1) / \(count)" } ?? "변경 \(count)개"
+        statusLabel.stringValue = Self.status(selected: selected, count: count)
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -285,7 +308,7 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         select(selected.map { max($0 - 1, 0) } ?? n - 1)
     }
 
-    // MARK: - Accept / decline
+    // MARK: - Accept / reject
 
     private func replace(in tv: NSTextView, range: NSRange, with text: String, actionName: String) {
         isApplyingEdit = true
@@ -302,15 +325,15 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         ensureFresh()
         guard id < result.hunks.count else { return }
         let h = result.hunks[id]
-        replace(in: original, range: h.original, with: h.modifiedText, actionName: "수락")
+        replace(in: original, range: h.original, with: h.modifiedText, actionName: "Accept")
         afterResolve(id)
     }
 
-    private func decline(_ id: Int) {
+    private func reject(_ id: Int) {
         ensureFresh()
         guard id < result.hunks.count else { return }
         let h = result.hunks[id]
-        replace(in: modified, range: h.modified, with: h.originalText, actionName: "거절")
+        replace(in: modified, range: h.modified, with: h.originalText, actionName: "Reject")
         afterResolve(id)
     }
 
@@ -326,21 +349,21 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         if let s = selected { accept(s) } else if !result.hunks.isEmpty { select(0) }
     }
 
-    @objc func declineSelected(_ sender: Any?) {
+    @objc func rejectSelected(_ sender: Any?) {
         ensureFresh()
-        if let s = selected { decline(s) } else if !result.hunks.isEmpty { select(0) }
+        if let s = selected { reject(s) } else if !result.hunks.isEmpty { select(0) }
     }
 
     @objc func acceptAll(_ sender: Any?) {
         replace(in: original, range: NSRange(location: 0, length: original.string.utf16.count),
-                with: modified.string, actionName: "모두 수락")
+                with: modified.string, actionName: "Accept All")
         selected = nil
         recompute()
     }
 
-    @objc func declineAll(_ sender: Any?) {
+    @objc func rejectAll(_ sender: Any?) {
         replace(in: modified, range: NSRange(location: 0, length: modified.string.utf16.count),
-                with: original.string, actionName: "모두 거절")
+                with: original.string, actionName: "Reject All")
         selected = nil
         recompute()
     }
@@ -349,16 +372,56 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(modified.string, forType: .string)
-        statusLabel.stringValue = "결과를 복사했습니다"
+        statusLabel.stringValue = "Copied result"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.recompute() }
     }
 
     @objc func clearAll(_ sender: Any?) {
-        replace(in: original, range: NSRange(location: 0, length: original.string.utf16.count), with: "", actionName: "모두 지우기")
-        replace(in: modified, range: NSRange(location: 0, length: modified.string.utf16.count), with: "", actionName: "모두 지우기")
+        replace(in: original, range: NSRange(location: 0, length: original.string.utf16.count), with: "", actionName: "Clear All")
+        replace(in: modified, range: NSRange(location: 0, length: modified.string.utf16.count), with: "", actionName: "Clear All")
         selected = nil
         recompute()
         window?.makeFirstResponder(original)
+    }
+
+    // MARK: - Undo
+
+    @objc func performUndo(_ sender: Any?) {
+        guard let um = window?.undoManager, um.canUndo else { return }
+        um.undo()
+        recompute()
+    }
+
+    @objc func performRedo(_ sender: Any?) {
+        guard let um = window?.undoManager, um.canRedo else { return }
+        um.redo()
+        recompute()
+    }
+
+    @objc private func updateUndoButtons() {
+        undoButton?.isEnabled = window?.undoManager?.canUndo ?? false
+        redoButton?.isEnabled = window?.undoManager?.canRedo ?? false
+    }
+
+    // MARK: - Scroll sync
+
+    /// Keeps the other editor showing the same passage: the text at the top of the scrolled
+    /// pane is mapped through the diff to the matching location in the other pane.
+    @objc private func editorDidScroll(_ note: Notification) {
+        guard syncScrolling, !isSyncingScroll, let clip = note.object as? NSClipView else { return }
+        let fromOriginal = clip === originalPane.scrollView.contentView
+        let (src, dst) = fromOriginal ? (originalPane, modifiedPane) : (modifiedPane, originalPane)
+        isSyncingScroll = true
+        defer { isSyncingScroll = false }
+        if src.isScrolledToBottom {
+            dst.scrollToBottom()
+        } else if let top = src.topLocation() {
+            dst.scroll(toLocation: result.mapOffset(top.index, fromOriginal: fromOriginal), lineOffset: top.lineOffset)
+        }
+    }
+
+    @objc func toggleSyncScrolling(_ sender: Any?) {
+        syncScrolling.toggle()
     }
 
     // MARK: - View
@@ -382,12 +445,62 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         inlineView.render(result, fontSize: fontSize)
     }
 
+    #if DEBUG
+    /// Drives accept → undo → redo → reject → undo and prints the outcome, then quits.
+    /// Steps run on separate run-loop passes so each forms its own undo group.
+    private func selfTest() {
+        var steps: [() -> Void] = []
+        func log(_ label: String) {
+            print("[selftest] \(label): hunks=\(result.hunks.count) original=\(original.string.debugDescription) revised=\(modified.string.debugDescription) canUndo=\(window?.undoManager?.canUndo ?? false)")
+        }
+        steps.append { self.recompute(); log("start") }
+        steps.append { self.accept(0); log("accept #0") }
+        steps.append { self.performUndo(nil); log("undo") }
+        steps.append { self.performRedo(nil); log("redo") }
+        steps.append { self.reject(0); log("reject #0") }
+        steps.append { self.performUndo(nil); log("undo") }
+        steps.append { self.acceptAll(nil); log("accept all") }
+        steps.append { self.performUndo(nil); log("undo") }
+        steps.append { NSApp.terminate(nil) }
+        for (i, step) in steps.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(i) * 0.15, execute: step)
+        }
+    }
+
+    /// Scrolls one editor and prints the first words at the top of both, then quits.
+    private func scrollTest() {
+        func top(_ p: EditorPane) -> String {
+            guard let t = p.topLocation() else { return "-" }
+            let ns = p.textView.string as NSString
+            return ns.substring(with: NSRange(location: t.index, length: min(24, ns.length - t.index)))
+        }
+        var y: CGFloat = 0
+        for _ in 0..<4 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5 + y / 4000) {
+                y += 1500
+                let clip = self.originalPane.scrollView.contentView
+                clip.scroll(to: NSPoint(x: 0, y: y))
+                self.originalPane.scrollView.reflectScrolledClipView(clip)
+                print("[scroll] original top=\(top(self.originalPane).debugDescription)  revised top=\(top(self.modifiedPane).debugDescription)")
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSApp.terminate(nil) }
+    }
+    #endif
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
-        case #selector(acceptSelected(_:)), #selector(declineSelected(_:)),
+        case #selector(acceptSelected(_:)), #selector(rejectSelected(_:)),
              #selector(selectNext(_:)), #selector(selectPrevious(_:)),
-             #selector(acceptAll(_:)), #selector(declineAll(_:)):
+             #selector(acceptAll(_:)), #selector(rejectAll(_:)):
             return !result.hunks.isEmpty || pendingDiff != nil
+        case #selector(toggleSyncScrolling(_:)):
+            item.state = syncScrolling ? .on : .off
+            return true
+        case #selector(performUndo(_:)):
+            return window?.undoManager?.canUndo ?? false
+        case #selector(performRedo(_:)):
+            return window?.undoManager?.canRedo ?? false
         case #selector(toggleInline(_:)):
             item.state = outerSplit.isSubviewCollapsed(outerSplit.arrangedSubviews[1]) ? .off : .on
             return true

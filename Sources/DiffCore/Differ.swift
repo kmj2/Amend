@@ -26,6 +26,19 @@ public struct DiffResult: Equatable, Sendable {
         segments.compactMap { if case .change(let h) = $0 { h } else { nil } }
     }
     public static let empty = DiffResult(segments: [])
+
+    /// Maps a UTF-16 offset in one text to the corresponding offset in the other.
+    /// Offsets inside a change map to the start of that change on the other side.
+    public func mapOffset(_ offset: Int, fromOriginal: Bool) -> Int {
+        var delta = 0
+        for h in hunks {
+            let (src, dst) = fromOriginal ? (h.original, h.modified) : (h.modified, h.original)
+            if offset < src.location { break }
+            if offset < NSMaxRange(src) { return dst.location }
+            delta = NSMaxRange(dst) - NSMaxRange(src)
+        }
+        return max(0, offset + delta)
+    }
 }
 
 public enum Differ {
@@ -41,8 +54,8 @@ public enum Differ {
         (original as NSString).replacingCharacters(in: hunk.original, with: hunk.modifiedText)
     }
 
-    /// Declining a change restores the original wording inside the modified text.
-    public static func decline(_ hunk: Hunk, in modified: String) -> String {
+    /// Rejecting a change restores the original wording inside the modified text.
+    public static func reject(_ hunk: Hunk, in modified: String) -> String {
         (modified as NSString).replacingCharacters(in: hunk.modified, with: hunk.originalText)
     }
 
@@ -156,6 +169,9 @@ public enum Differ {
     /// Common prefix/suffix by Character, reported in UTF-16 units; never overlapping.
     static func shared(_ x: String, _ y: String) -> (Int, Int) {
         guard !x.isEmpty, !y.isEmpty else { return (0, 0) }
+        // Across several words ("has a" → "have an") a partial highlight is confusing;
+        // show the whole phrase replaced instead.
+        guard !x.contains(where: \.isWhitespace), !y.contains(where: \.isWhitespace) else { return (0, 0) }
         let xc = Array(x), yc = Array(y)
         var p = 0
         while p < xc.count, p < yc.count, xc[p] == yc[p] { p += 1 }
