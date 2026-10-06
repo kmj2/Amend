@@ -39,7 +39,7 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "TextDiff"
+        window.title = "Amend"
         window.minSize = NSSize(width: 640, height: 420)
         super.init(window: window)
         buildLayout()
@@ -47,13 +47,13 @@ final class MainWindowController: NSWindowController, NSTextViewDelegate, NSMenu
         window.setFrameAutosaveName("MainWindow")
         applyFont()
         #if DEBUG
-        if let a = ProcessInfo.processInfo.environment["TEXTDIFF_A"],
-           let b = ProcessInfo.processInfo.environment["TEXTDIFF_B"] {
+        if let a = ProcessInfo.processInfo.environment["AMEND_A"],
+           let b = ProcessInfo.processInfo.environment["AMEND_B"] {
             original.string = a
             modified.string = b
         }
-        if ProcessInfo.processInfo.environment["TEXTDIFF_DARK"] != nil { NSApp.appearance = NSAppearance(named: .darkAqua) }
-        if let s = ProcessInfo.processInfo.environment["TEXTDIFF_SELECT"], let id = Int(s) {
+        if ProcessInfo.processInfo.environment["AMEND_DARK"] != nil { NSApp.appearance = NSAppearance(named: .darkAqua) }
+        if let s = ProcessInfo.processInfo.environment["AMEND_SELECT"], let id = Int(s) {
             DispatchQueue.main.async { self.recompute(); self.select(id) }
         }
         #endif

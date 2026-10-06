@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "TextDiff",
+    name: "Amend",
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "DiffCore"),
         .executableTarget(
-            name: "TextDiff",
+            name: "Amend",
             dependencies: ["DiffCore"]
         ),
         .testTarget(

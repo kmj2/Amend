@@ -1,4 +1,4 @@
-# TextDiff — 구현 계획
+# Amend — 구현 계획
 
 AI와 교정(proofreading)할 때 원문/수정본을 붙여넣고 차이를 보며 변경점별로 수락/거절하는 가벼운 macOS 앱.
 

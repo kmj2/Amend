@@ -1,4 +1,4 @@
-# TextDiff
+# Amend
 
 AI와 글을 교정할 때 원문과 수정본의 차이를 한눈에 보고, 변경점마다 **수락/거절**할 수 있는 가벼운 macOS 앱.
 
@@ -20,12 +20,12 @@ AI와 글을 교정할 때 원문과 수정본의 차이를 한눈에 보고, �
 
 ## 설치
 
-[Releases](../../releases)에서 `TextDiff-x.y.z.zip`을 받아 압축을 풀고 `TextDiff.app`을 응용 프로그램 폴더로 옮깁니다.
+[Releases](../../releases)에서 `Amend-x.y.z.zip`을 받아 압축을 풀고 `Amend.app`을 응용 프로그램 폴더로 옮깁니다.
 
 공증(notarization)되지 않은 앱이라 처음 실행 시 macOS가 막을 수 있습니다. 앱을 **우클릭 → 열기**하거나, 다음을 실행하세요.
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/TextDiff.app
+xattr -dr com.apple.quarantine /Applications/Amend.app
 ```
 
 macOS 13 이상, Apple Silicon / Intel 모두 지원.
@@ -35,7 +35,7 @@ macOS 13 이상, Apple Silicon / Intel 모두 지원.
 ```sh
 swift test                  # diff 엔진 테스트
 swift run                   # 개발 실행
-scripts/build-app.sh 0.1.0  # build/TextDiff.app + zip
+scripts/build-app.sh 0.1.0  # build/Amend.app + zip
 ```
 
 `v*` 태그를 푸시하면 GitHub Actions가 릴리즈를 만듭니다.

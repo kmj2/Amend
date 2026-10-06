@@ -22,5 +22,5 @@ enum Theme {
 
 extension NSAttributedString.Key {
     /// Marks inline-diff text that belongs to a hunk; value is the hunk id (Int).
-    static let hunkID = NSAttributedString.Key("TextDiff.hunkID")
+    static let hunkID = NSAttributedString.Key("Amend.hunkID")
 }

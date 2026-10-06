@@ -1,19 +1,19 @@
 #!/bin/bash
-# Builds a universal (arm64 + x86_64) TextDiff.app into ./build and zips it for release.
+# Builds a universal (arm64 + x86_64) Amend.app into ./build and zips it for release.
 # Usage: scripts/build-app.sh [version]
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 VERSION="${1:-0.1.0}"
-APP="build/TextDiff.app"
+APP="build/Amend.app"
 
 swift build -c release --arch arm64 --arch x86_64
-BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/TextDiff"
+BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Amend"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/TextDiff"
-strip -x "$APP/Contents/MacOS/TextDiff"
+cp "$BIN" "$APP/Contents/MacOS/Amend"
+strip -x "$APP/Contents/MacOS/Amend"
 [ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -21,10 +21,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>TextDiff</string>
-    <key>CFBundleDisplayName</key><string>TextDiff</string>
-    <key>CFBundleIdentifier</key><string>io.github.minjongkim01.textdiff</string>
-    <key>CFBundleExecutable</key><string>TextDiff</string>
+    <key>CFBundleName</key><string>Amend</string>
+    <key>CFBundleDisplayName</key><string>Amend</string>
+    <key>CFBundleIdentifier</key><string>io.github.kmj2.amend</string>
+    <key>CFBundleExecutable</key><string>Amend</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
@@ -41,5 +41,5 @@ PLIST
 # Ad-hoc signature: required to run on Apple Silicon. Not notarized.
 codesign --force --deep --sign - "$APP"
 
-ditto -c -k --keepParent "$APP" "build/TextDiff-${VERSION}.zip"
-echo "Built $APP ($(du -sh "$APP" | cut -f1)) and build/TextDiff-${VERSION}.zip"
+ditto -c -k --keepParent "$APP" "build/Amend-${VERSION}.zip"
+echo "Built $APP ($(du -sh "$APP" | cut -f1)) and build/Amend-${VERSION}.zip"
